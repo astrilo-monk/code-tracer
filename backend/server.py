@@ -32,20 +32,11 @@ api_router = APIRouter(prefix="/api")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+# --- API Endpoints ---
 MAX_STEPS = 250
 
-# --- Models ---
 class RunCodeRequest(BaseModel):
     code: str
-
-class ChatRequest(BaseModel):
-    message: str
-    code: Optional[str] = None
-    execution_state: Optional[dict] = None
-    history: Optional[List[dict]] = None
-
-# --- GDB Tracer ---
 def compile_code(code: str, tmpdir: str):
     src_path = os.path.join(tmpdir, "program.c")
     bin_path = os.path.join(tmpdir, "program")
@@ -320,103 +311,6 @@ async def run_code(request: RunCodeRequest):
 
         logger.info(f"Trace complete: {len(steps)} steps, error={trace_error}")
         return {"error": trace_error, "steps": steps, "compilation_error": None}
-
-@api_router.post("/chat")
-async def chat_endpoint(request: ChatRequest):
-    """Stream AI responses for the Socratic tutor using local Ollama (deepseek-coder-v2:lite)."""
-    import httpx
-
-    OLLAMA_BASE = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434')
-    OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'phi:latest')
-
-    system_prompt = """You are a concise Socratic C programming tutor inside a code visualization tool.
-
-STRICT RULES:
-1. Reply in 1-2 sentences MAX. Never write long paragraphs.
-2. NEVER give direct code fixes. Ask a guiding question instead.
-3. Always reference the CURRENT LINE and variable values from the context below.
-4. Use backticks for code references like `variable_name` or `line 5`.
-5. Be precise — mention exact values, addresses, and line numbers."""
-
-    # Build rich context from source code + execution state
-    context_parts = []
-
-    # Add source code with line numbers
-    if request.code:
-        numbered_lines = []
-        for i, line in enumerate(request.code.split('\n'), 1):
-            numbered_lines.append(f"{i}: {line}")
-        context_parts.append(f"[SOURCE CODE]\n{chr(10).join(numbered_lines)}")
-
-    # Add execution state with clear labels
-    if request.execution_state:
-        es = request.execution_state
-        context_parts.append(f"[EXECUTION POINTER] Currently on LINE {es.get('line', '?')} inside function `{es.get('func', '?')}`")
-
-        if es.get('variables'):
-            var_lines = [f"  {v['name']} = {v['value']} ({v.get('type', '?')})" for v in es['variables']]
-            context_parts.append(f"[VARIABLES]\n" + "\n".join(var_lines))
-
-        if es.get('stack_frames'):
-            stack_lines = [f"  [{f['level']}] {f['func']}() at line {f['line']}" for f in es['stack_frames']]
-            context_parts.append(f"[CALL STACK]\n" + "\n".join(stack_lines))
-
-        if es.get('heap'):
-            heap_lines = [f"  {h['var_name']} -> {h['address']}" for h in es['heap']]
-            context_parts.append(f"[HEAP]\n" + "\n".join(heap_lines))
-
-    context_block = "\n\n".join(context_parts)
-    full_message = f"{context_block}\n\n[STUDENT QUESTION] {request.message}" if context_block else request.message
-
-    # Build messages array (OpenAI format)
-    messages = [{"role": "system", "content": system_prompt}]
-    if request.history:
-        for msg in request.history[-10:]:
-            role = msg.get("role")
-            if role in ("user", "assistant"):
-                messages.append({"role": role, "content": msg["content"]})
-    messages.append({"role": "user", "content": full_message})
-
-    async def generate():
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream(
-                    "POST",
-                    f"{OLLAMA_BASE}/v1/chat/completions",
-                    json={
-                        "model": OLLAMA_MODEL,
-                        "messages": messages,
-                        "stream": True,
-                    },
-                ) as resp:
-                    if resp.status_code != 200:
-                        body = await resp.aread()
-                        logger.error(f"Ollama error {resp.status_code}: {body.decode()}")
-                        yield f"data: {json.dumps({'error': f'Ollama returned {resp.status_code}. Is Ollama running?'})}\n\n"
-                        return
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        payload = line[6:]
-                        if payload.strip() == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(payload)
-                            delta = data.get("choices", [{}])[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                yield f"data: {json.dumps({'content': content})}\n\n"
-                        except json.JSONDecodeError:
-                            continue
-            yield f"data: {json.dumps({'done': True})}\n\n"
-        except httpx.ConnectError:
-            logger.error("Cannot connect to Ollama — is it running?")
-            yield f"data: {json.dumps({'error': 'Cannot connect to Ollama. Run: ollama serve'})}\n\n"
-        except Exception as e:
-            logger.error(f"Chat error: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # Include router

@@ -62,9 +62,6 @@ const useTraceStore = create((set, get) => ({
   },
   reset: () => set({ currentStep: 0, isPlaying: false }),
   setPlaySpeed: (speed) => set({ playSpeed: speed }),
-
-  chatOpen: false,
-  setChatOpen: (open) => set({ chatOpen: open }),
 }));
 
 export default useTraceStore;

@@ -5,7 +5,6 @@ import ExplanationPanel from '@/components/ExplanationPanel';
 import MemoryVisualization from '@/components/MemoryVisualization';
 import StepTimeline from '@/components/StepTimeline';
 import PlaybackControls from '@/components/PlaybackControls';
-import ChatBot from '@/components/ChatBot';
 import useTraceStore from '@/store/traceStore';
 import { Terminal, Warning, GraduationCap, Info } from '@phosphor-icons/react';
 
@@ -105,8 +104,6 @@ function App() {
           <StepTimeline />
         </div>
       </main>
-
-      <ChatBot />
     </div>
   );
 }
