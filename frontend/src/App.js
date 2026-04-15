@@ -14,7 +14,7 @@ const ErrorBanner = () => {
   const error = compilationError || traceError;
   if (!error) return null;
 
-  // Parse line numbers from GCC errors
+  // Parse line numbers from GCC/Javac errors
   const lines = error.split('\n').filter(Boolean);
 
   return (
@@ -27,7 +27,7 @@ const ErrorBanner = () => {
           </span>
         </div>
         {lines.map((line, i) => {
-          const match = line.match(/program\.c:(\d+):\d+:\s*(error|warning):\s*(.*)/);
+          const match = line.match(/(?:program\.c|[A-Za-z_][A-Za-z0-9_]*\.java):(\d+)(?::\d+)?:\s*(error|warning):\s*(.*)/);
           if (match) {
             return (
               <div key={i} className="flex items-start gap-2 py-0.5">
@@ -50,7 +50,7 @@ const ErrorBanner = () => {
 const SupportedFeatures = () => (
   <div data-testid="supported-features" className="flex items-center gap-3 text-[10px] font-plex text-zinc-600">
     <Info size={12} className="text-zinc-600 shrink-0" />
-    <span>Supports: int, float, char, pointers, structs, arrays, malloc/free, printf</span>
+    <span>Supports C + Java tracing (core control flow, stack, locals)</span>
   </div>
 );
 

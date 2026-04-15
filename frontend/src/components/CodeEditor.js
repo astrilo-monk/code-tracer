@@ -5,6 +5,8 @@ import useTraceStore from '@/store/traceStore';
 const CodeEditor = () => {
   const editorRef = useRef(null);
   const decorationsRef = useRef([]);
+  const language = useTraceStore((s) => s.language);
+  const setLanguage = useTraceStore((s) => s.setLanguage);
   const code = useTraceStore((s) => s.code);
   const setCode = useTraceStore((s) => s.setCode);
   const steps = useTraceStore((s) => s.steps);
@@ -88,14 +90,26 @@ const CodeEditor = () => {
             <span className="text-[10px] font-plex text-amber-400 animate-pulse">Tracing...</span>
           )}
         </div>
-        <span className="text-[10px] font-mono text-zinc-600">
-          program.c
-        </span>
+        <div className="flex items-center gap-2">
+          <select
+            data-testid="language-selector"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            disabled={isTracing}
+            className="bg-zinc-900/70 border border-zinc-700/50 rounded px-1.5 py-0.5 text-[10px] font-mono text-zinc-300 outline-none"
+          >
+            <option value="c">C</option>
+            <option value="java">Java</option>
+          </select>
+          <span className="text-[10px] font-mono text-zinc-600">
+            {language === 'java' ? 'Main.java' : 'program.c'}
+          </span>
+        </div>
       </div>
       <div className="flex-1 min-h-0">
         <Editor
           height="100%"
-          language="c"
+          language={language === 'java' ? 'java' : 'c'}
           value={code}
           onChange={(val) => setCode(val || '')}
           onMount={handleEditorDidMount}

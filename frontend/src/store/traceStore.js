@@ -24,9 +24,43 @@ int main() {
     return 0;
 }`;
 
+  const SAMPLE_JAVA_CODE = `class Main {
+    static int add(int a, int b) {
+      int sum = a + b;
+      return sum;
+    }
+
+    static int multiply(int a, int b) {
+      int product = a * b;
+      return product;
+    }
+
+    public static void main(String[] args) {
+      int x = 5;
+      int y = 3;
+
+      int sum = add(x, y);
+      int prod = multiply(x, y);
+      int total = add(sum, prod);
+
+      System.out.println("Result: " + total);
+    }
+  }`;
+
 const useTraceStore = create((set, get) => ({
+  language: 'c',
   code: SAMPLE_CODE,
   setCode: (code) => set({ code }),
+  setLanguage: (language) =>
+    set(() => ({
+      language,
+      code: language === 'java' ? SAMPLE_JAVA_CODE : SAMPLE_CODE,
+      steps: [],
+      currentStep: 0,
+      isPlaying: false,
+      traceError: null,
+      compilationError: null,
+    })),
 
   steps: [],
   finalOutput: '',

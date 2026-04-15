@@ -9,6 +9,7 @@ import tempfile
 import subprocess
 import asyncio
 import shutil
+import re
 from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional
@@ -38,7 +39,12 @@ MAX_STEPS = 250
 
 class RunCodeRequest(BaseModel):
     code: str
-def compile_code(code: str, tmpdir: str):
+
+    # Supported values: "c" (default) and "java"
+    language: str = "c"
+
+
+def compile_c_code(code: str, tmpdir: str):
     src_path = os.path.join(tmpdir, "program.c")
     exe_name = "program.exe" if os.name == "nt" else "program"
     bin_path = os.path.join(tmpdir, exe_name)
@@ -50,7 +56,62 @@ def compile_code(code: str, tmpdir: str):
     )
     if result.returncode != 0:
         return None, result.stderr
-    return bin_path, None
+    return {"language": "c", "bin_path": bin_path, "source_file": "program.c"}, None
+
+
+def detect_java_main_class(code: str) -> Optional[str]:
+    public_match = re.search(r"public\s+class\s+([A-Za-z_][A-Za-z0-9_]*)", code)
+    if public_match:
+        return public_match.group(1)
+
+    class_match = re.search(r"class\s+([A-Za-z_][A-Za-z0-9_]*)", code)
+    if class_match:
+        return class_match.group(1)
+
+    return None
+
+
+def compile_java_code(code: str, tmpdir: str):
+    if not re.search(r"public\s+static\s+void\s+main\s*\(", code):
+        return None, "Java tracing currently requires a main method: public static void main(String[] args)"
+
+    main_class = detect_java_main_class(code)
+    if not main_class:
+        return None, "Could not detect a Java class name. Define a class like: class Main { ... }"
+
+    src_name = f"{main_class}.java"
+    src_path = os.path.join(tmpdir, src_name)
+    with open(src_path, "w") as f:
+        f.write(code)
+
+    javac_path = shutil.which("javac")
+    if not javac_path:
+        return None, "javac not found. Install a JDK and ensure javac is on PATH."
+
+    result = subprocess.run(
+        [javac_path, "-g", src_path],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        return None, result.stderr or result.stdout
+
+    return {
+        "language": "java",
+        "main_class": main_class,
+        "source_file": src_name,
+        "classpath": tmpdir,
+    }, None
+
+
+def compile_code(code: str, tmpdir: str, language: str):
+    lang = (language or "c").strip().lower()
+    if lang == "java":
+        return compile_java_code(code, tmpdir)
+    if lang != "c":
+        return None, f"Unsupported language: {language}. Supported languages are: c, java"
+    return compile_c_code(code, tmpdir)
 
 
 def resolve_gdb_executable() -> Optional[str]:
@@ -110,7 +171,6 @@ def run_gdb_trace(bin_path: str, code: str):
     steps = []
     stdout_buffer = ""
     source_lines = code.split('\n')
-    num_lines = len(source_lines)
 
     gdb_path = resolve_gdb_executable()
     if not gdb_path:
@@ -265,6 +325,152 @@ def run_gdb_trace(bin_path: str, code: str):
             pass
 
 
+def run_jdb_trace(classpath: str, main_class: str, source_file: str):
+    """Best-effort Java tracing using jdb command scripting."""
+    jdb_path = shutil.which("jdb")
+    if not jdb_path:
+        return [], "jdb not found. Install a JDK and ensure jdb is on PATH."
+
+    source_lines = []
+    try:
+        source_path = Path(classpath) / source_file
+        source_lines = source_path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        source_lines = []
+
+    breakpoint_lines = []
+    for line_number, line_text in enumerate(source_lines, 1):
+        stripped = line_text.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*"):
+            continue
+        if stripped in {"{", "}", "};"}:
+            continue
+        if stripped.startswith("import ") or stripped.startswith("package "):
+            continue
+        if any(keyword in stripped for keyword in (" class ", " interface ", " enum ")):
+            continue
+        is_executable = (
+            stripped.endswith(";")
+            or stripped.startswith("if ")
+            or stripped.startswith("if(")
+            or stripped.startswith("for ")
+            or stripped.startswith("for(")
+            or stripped.startswith("while ")
+            or stripped.startswith("while(")
+            or stripped.startswith("switch ")
+            or stripped.startswith("switch(")
+            or stripped.startswith("do")
+            or stripped.startswith("return ")
+            or stripped.startswith("throw ")
+        )
+        if not is_executable:
+            continue
+        breakpoint_lines.append(line_number)
+
+    commands = []
+    for line_number in breakpoint_lines:
+        commands.append(f"stop at {main_class}:{line_number}")
+    commands.append("stop in " + main_class + ".main")
+    commands.append("run")
+
+    max_script_steps = min(MAX_STEPS, max(20, len(breakpoint_lines) * 2))
+    for _ in range(max_script_steps):
+        commands.extend(["threads", "thread 1", "where", "locals", "cont"])
+    commands.append("quit")
+
+    try:
+        proc = subprocess.run(
+            [jdb_path, "-sourcepath", classpath, "-classpath", classpath, main_class],
+            input="\n".join(commands) + "\n",
+            capture_output=True,
+            text=True,
+            timeout=22,
+        )
+    except subprocess.TimeoutExpired:
+        return [], "Java trace timed out."
+    except Exception as e:
+        return [], f"Failed to run jdb: {str(e)}"
+
+    output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    if "NoClassDefFoundError" in output or "ClassNotFoundException" in output:
+        return [], "Java class loading failed. Ensure the class name matches the file name."
+
+    breakpoint_re = re.compile(r'"thread=main",\s+([^,]+),\s+line=(\d+)')
+    frame_re = re.compile(r'\[(\d+)\]\s+([A-Za-z0-9_.$<>]+)\.([A-Za-z0-9_<>$]+)\s+\(([^:()]+):(\d+)\)')
+    local_value_re = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$')
+
+    steps = []
+    chunks = output.split('Breakpoint hit:')
+    for chunk in chunks[1:]:
+        if len(steps) >= MAX_STEPS:
+            break
+
+        chunk_lines = [line for line in chunk.splitlines() if line.strip()]
+        if not chunk_lines:
+            continue
+
+        current_line = None
+        header_line = chunk_lines[0]
+        header_match = breakpoint_re.search(header_line)
+        if header_match:
+            current_line = int(header_match.group(2))
+        else:
+            for line in chunk_lines[:4]:
+                header_match = breakpoint_re.search(line)
+                if header_match:
+                    current_line = int(header_match.group(2))
+                    break
+
+        stack_frames = []
+        for chunk_line in chunk_lines:
+            frame_match = frame_re.search(chunk_line.strip())
+            if frame_match:
+                stack_frames.append({
+                    "level": frame_match.group(1),
+                    "func": f"{frame_match.group(2)}.{frame_match.group(3)}",
+                    "file": frame_match.group(4),
+                    "line": int(frame_match.group(5)),
+                })
+
+        if not stack_frames:
+            continue
+
+        if current_line is None:
+            current_line = stack_frames[0]["line"]
+
+        variables = []
+        for chunk_line in chunk_lines:
+            local_match = local_value_re.match(chunk_line.strip())
+            if not local_match:
+                continue
+            name = local_match.group(1)
+            if name in ("Method arguments", "Local variables"):
+                continue
+            value = local_match.group(2)
+            variables.append({
+                "name": name,
+                "value": value,
+                "type": infer_type(value),
+            })
+
+        steps.append({
+            "step": len(steps),
+            "line": current_line,
+            "func": stack_frames[0]["func"],
+            "variables": variables,
+            "stack_frames": stack_frames,
+            "heap": [],
+            "stdout": "",
+        })
+
+    if not steps:
+        return [], "No Java steps collected. Try code with simpler control flow and a standard main method."
+
+    return steps, None
+
+
 def quick_heap_read(gdbmi, var_name, address, depth=0, visited=None):
     """Quickly read a heap node — limited depth."""
     if visited is None:
@@ -319,30 +525,47 @@ async def root():
 
 @api_router.post("/run")
 async def run_code(request: RunCodeRequest):
-    """Compile and trace C code through GDB."""
+    """Compile and trace C or Java code."""
     code = request.code.strip()
-    logger.info(f"Run request received ({len(code)} chars)")
+    language = (request.language or "c").strip().lower()
+    logger.info(f"Run request received ({len(code)} chars, language={language})")
     if not code:
         return {"error": "No code provided", "steps": [], "compilation_error": None}
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        bin_path, compile_error = compile_code(code, tmpdir)
+        artifact, compile_error = compile_code(code, tmpdir, language)
         if compile_error:
             logger.info(f"Compilation failed: {compile_error[:200]}")
             return {"error": None, "steps": [], "compilation_error": compile_error}
 
         loop = asyncio.get_event_loop()
         try:
-            steps, trace_error = await asyncio.wait_for(
-                loop.run_in_executor(None, run_gdb_trace, bin_path, code),
-                timeout=25
-            )
+            if language == "java":
+                steps, trace_error = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        run_jdb_trace,
+                        artifact["classpath"],
+                        artifact["main_class"],
+                        artifact["source_file"],
+                    ),
+                    timeout=25,
+                )
+            else:
+                steps, trace_error = await asyncio.wait_for(
+                    loop.run_in_executor(None, run_gdb_trace, artifact["bin_path"], code),
+                    timeout=25,
+                )
         except asyncio.TimeoutError:
             # Kill any lingering GDB processes (Windows-compatible)
             if os.name == 'nt':
                 subprocess.run(["taskkill", "/F", "/IM", "gdb.exe"], capture_output=True)
+                subprocess.run(["taskkill", "/F", "/IM", "jdb.exe"], capture_output=True)
+                subprocess.run(["taskkill", "/F", "/IM", "java.exe"], capture_output=True)
             else:
                 subprocess.run(["pkill", "-f", "gdb.*program"], capture_output=True)
+                subprocess.run(["pkill", "-f", "jdb"], capture_output=True)
+                subprocess.run(["pkill", "-f", "java"], capture_output=True)
             return {"error": "Trace timed out (code may be too complex or recursive). Partial results shown.", "steps": [], "compilation_error": None}
         except Exception as e:
             logger.error(f"Unexpected trace error: {type(e).__name__}: {e}")

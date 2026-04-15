@@ -3,6 +3,91 @@ import useTraceStore from '@/store/traceStore';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { BookOpen, Code } from '@phosphor-icons/react';
 
+function humanizeOperators(expr) {
+  if (!expr) return '';
+  return expr
+    .replace(/>=/g, ' is greater than or equal to ')
+    .replace(/<=/g, ' is less than or equal to ')
+    .replace(/==/g, ' is equal to ')
+    .replace(/!=/g, ' is not equal to ')
+    .replace(/&&/g, ' and ')
+    .replace(/\|\|/g, ' or ')
+    .replace(/>/g, ' is greater than ')
+    .replace(/</g, ' is less than ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseSimpleNumber(value) {
+  if (value === undefined || value === null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function evaluateSimpleCondition(condition, variables) {
+  const m = condition.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(<=|>=|==|!=|<|>)\s*(-?\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  const leftName = m[1];
+  const op = m[2];
+  const right = Number(m[3]);
+
+  const leftVar = variables.find((v) => v.name === leftName);
+  const left = leftVar ? parseSimpleNumber(leftVar.value) : null;
+  if (left === null) return null;
+
+  if (op === '>') return left > right;
+  if (op === '<') return left < right;
+  if (op === '>=') return left >= right;
+  if (op === '<=') return left <= right;
+  if (op === '==') return left === right;
+  if (op === '!=') return left !== right;
+  return null;
+}
+
+function getLoopOrConditionContext(lineText, variables) {
+  const ifMatch = lineText.match(/^if\s*\((.*)\)/);
+  if (ifMatch) {
+    const condition = ifMatch[1].trim();
+    const result = evaluateSimpleCondition(condition, variables);
+    return {
+      kind: 'if',
+      raw: condition,
+      readable: humanizeOperators(condition),
+      result,
+    };
+  }
+
+  const whileMatch = lineText.match(/^while\s*\((.*)\)/);
+  if (whileMatch) {
+    const condition = whileMatch[1].trim();
+    const result = evaluateSimpleCondition(condition, variables);
+    return {
+      kind: 'while',
+      raw: condition,
+      readable: humanizeOperators(condition),
+      result,
+    };
+  }
+
+  const forMatch = lineText.match(/^for\s*\(([^;]*);([^;]*);([^)]*)\)/);
+  if (forMatch) {
+    const init = forMatch[1].trim();
+    const condition = forMatch[2].trim();
+    const step = forMatch[3].trim();
+    const result = evaluateSimpleCondition(condition, variables);
+    return {
+      kind: 'for',
+      init,
+      raw: condition,
+      readable: humanizeOperators(condition),
+      step,
+      result,
+    };
+  }
+
+  return null;
+}
+
 function getExplanation(step, prevStep, code, beginner) {
   const lines = code.split('\n');
   const lineText = (lines[step.line - 1] || '').trim();
@@ -27,11 +112,19 @@ function getExplanation(step, prevStep, code, beginner) {
   const isReturn = funcChanged && (step.stack_frames?.length || 0) < (prevStep?.stack_frames?.length || 0);
   const isRecursive = prevStep && step.func === prevStep.func && isCall;
   const depth = (step.stack_frames?.length || 1) - 1;
+  const conditionContext = getLoopOrConditionContext(lineText, step.variables || []);
 
   if (!beginner) {
     let parts = [];
     if (isCall) parts.push(`Called ${step.func}()`);
     else if (isReturn) parts.push(`Returned to ${step.func}()`);
+    if (conditionContext) {
+      const outcome =
+        conditionContext.result === null
+          ? ''
+          : (conditionContext.result ? ' (currently true)' : ' (currently false)');
+      parts.push(`Condition: ${conditionContext.readable}${outcome}`);
+    }
     if (changes.length > 0) {
       parts.push(changes.map(c => c.from === null ? `${c.name} = ${c.to}` : `${c.name}: ${c.from} -> ${c.to}`).join(', '));
     }
@@ -56,10 +149,28 @@ function getExplanation(step, prevStep, code, beginner) {
   } else if (lineText.includes('return')) {
     const retVal = step.variables.find(v => v.name === '__return__');
     detail = `The function "${step.func}()" returns${retVal ? ' the value ' + retVal.value : ''}. Execution goes back to wherever this function was called from.`;
-  } else if (lineText.match(/^if\s*\(/) || lineText.match(/^}\s*else/)) {
-    detail = 'A condition is being checked. The program decides which branch of code to execute based on whether the condition is true or false.';
-  } else if (lineText.match(/^while\s*\(/) || lineText.match(/^for\s*\(/)) {
-    detail = 'A loop condition is being checked. If true, the code inside the loop runs again. If false, the loop ends.';
+  } else if (lineText.match(/^}\s*else/)) {
+    detail = 'This is the else branch. It runs when the previous if-condition was false.';
+  } else if (conditionContext?.kind === 'if') {
+    const resultText =
+      conditionContext.result === null
+        ? ''
+        : (conditionContext.result ? ' It is true right now, so the if-block runs.' : ' It is false right now, so the if-block is skipped.');
+    detail = `A condition is being checked: "${conditionContext.readable}".${resultText}`;
+  } else if (conditionContext?.kind === 'while') {
+    const resultText =
+      conditionContext.result === null
+        ? ''
+        : (conditionContext.result ? ' It is true right now, so the loop continues.' : ' It is false right now, so the loop stops.');
+    detail = `A while-loop condition is being checked: "${conditionContext.readable}".${resultText}`;
+  } else if (conditionContext?.kind === 'for') {
+    const resultText =
+      conditionContext.result === null
+        ? ''
+        : (conditionContext.result ? ' It is true right now, so this iteration continues.' : ' It is false right now, so the loop ends.');
+    const initText = conditionContext.init ? ` Start: ${conditionContext.init}.` : '';
+    const stepText = conditionContext.step ? ` Step update: ${conditionContext.step}.` : '';
+    detail = `A for-loop is running.${initText} Condition: "${conditionContext.readable}".${stepText}${resultText}`;
   } else if (changes.length > 0) {
     detail = changes.map(c => {
       if (c.from === null) return `Variable "${c.name}" is created with initial value ${c.to}.`;

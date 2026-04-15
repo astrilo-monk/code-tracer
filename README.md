@@ -1,19 +1,19 @@
 # Code Tracer
 
-Code Tracer is an interactive, visual C code execution tracker built to help you understand what your code is doing. Paste C code, hit run, and watch your variables, call stack, and memory change in real time.
+Code Tracer is an interactive execution tracker for C and Java, built to help you understand what your code is doing. Paste code, hit run, and watch your variables and call stack evolve in real time.
 
 ## What it does
 
 - **Visual Memory Tracking**: See stack and heap blocks update live as code executes.
 - **Call Stack Tracing**: Follow the exact execution path, particularly useful for recursion and nested function calls.
 - **Step-through Debugging**: Play through execution step-by-step or auto-play at adjustable speeds.
-- **Beginner Mode**: Translates C operations into plain English when you need it.
+- **Beginner Mode**: Translates execution into plain English when you need it.
 
 ## Stack
 
 - **Frontend**: React 18 with Tailwind CSS, Monaco Editor, and Zustand
 - **Backend**: Python with FastAPI and pygdbmi
-- **Tracer**: GCC and GDB for breakpoint-based execution tracking
+- **Tracer**: GCC/GDB for C and JDK tools (javac/jdb) for Java
 
 ## Installation
 
@@ -25,7 +25,7 @@ Install these first:
 
 ```bash
 sudo apt update
-sudo apt install gcc gdb python3 python3-pip nodejs
+sudo apt install gcc gdb openjdk-17-jdk python3 python3-pip nodejs
 npm install -g yarn
 ```
 
@@ -51,14 +51,14 @@ yarn install
 yarn start
 ```
 
-Open http://localhost:3000 in your browser. Paste C code and run it.
+Open http://localhost:3000 in your browser. Choose C or Java in the editor and run it.
 
 ## How the tracer works
 
-1. Your code gets saved to a temporary file and compiled with gcc -g -O0 (flags preserve debug symbols and disable optimizations).
-2. A GDB process spawns using the Machine Interface (pygdbmi).
-3. Breakpoints are injected on every executable line of your code.
-4. As GDB steps through execution, we pull frame info, local variables, and call stack at every stop.
+1. Your code gets saved to a temporary file and compiled.
+2. C code uses gcc -g -O0 and traces through GDB/MI.
+3. Java code uses javac and traces through jdb commands.
+4. We collect frame info, local variables, and call stack at each step.
 5. Everything gets formatted into JSON and sent to the frontend.
 6. You can scrub through execution like scrubbing a video.
 

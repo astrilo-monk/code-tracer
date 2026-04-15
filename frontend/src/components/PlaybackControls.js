@@ -16,6 +16,7 @@ const API = "http://127.0.0.1:8000/api";
 
 const PlaybackControls = () => {
   const code = useTraceStore((s) => s.code);
+  const language = useTraceStore((s) => s.language);
   const steps = useTraceStore((s) => s.steps);
   const currentStep = useTraceStore((s) => s.currentStep);
   const isPlaying = useTraceStore((s) => s.isPlaying);
@@ -39,7 +40,7 @@ const PlaybackControls = () => {
     setTraceError(null);
     setCompilationError(null);
     try {
-      const res = await axios.post(`${API}/run`, { code }, { timeout: 30000 });
+      const res = await axios.post(`${API}/run`, { code, language }, { timeout: 30000 });
       if (res.data.compilation_error) {
         setSteps([], '');
         setCompilationError(res.data.compilation_error);
@@ -54,7 +55,7 @@ const PlaybackControls = () => {
     } finally {
       setIsTracing(false);
     }
-  }, [code, setIsTracing, setTraceError, setCompilationError, setSteps]);
+  }, [code, language, setIsTracing, setTraceError, setCompilationError, setSteps]);
 
   // Playback loop
   useEffect(() => {
