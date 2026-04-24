@@ -18,8 +18,8 @@ const MemoryVisualization = () => {
     return getTransitionMeta(currentState, prev);
   }, [currentState, currentStep, steps]);
 
-  const variables = currentState?.variables || [];
-  const heap = currentState?.heap || [];
+  const variables = useMemo(() => currentState?.variables || [], [currentState]);
+  const heap = useMemo(() => currentState?.heap || [], [currentState]);
 
   // Build pointer map: variable name -> address it points to
   const pointerTargets = useMemo(() => {
