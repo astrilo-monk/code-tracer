@@ -1,4 +1,6 @@
+# ========================
 # Dependencies
+# ========================
 node_modules/
 .pnp
 .pnp.js
@@ -8,17 +10,21 @@ __pycache__/
 .venv/
 venv/
 env/
+.pip/
+pip-log.txt
 
+# ========================
 # Environment Variables
+# ========================
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 backend/.env
 frontend/.env
 
+# ========================
 # Build outputs
+# ========================
 build/
 dist/
 out/
@@ -27,14 +33,41 @@ frontend/build/
 *.out
 *.exe
 
+# ========================
+# Testing & Coverage
+# ========================
+coverage/
+.nyc_output/
+*.lcov
+htmlcov/
+.pytest_cache/
+
+# ========================
 # Logs
+# ========================
 logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pids/
+*.pid
+*.seed
 
+# ========================
+# Docker
+# ========================
+*.tar
+docker-compose.override.yml
+
+# ========================
+# Vercel
+# ========================
+.vercel/
+
+# ========================
 # IDE / Editor
+# ========================
 .vscode/
 .idea/
 *.suo
@@ -42,12 +75,35 @@ yarn-error.log*
 *.njsproj
 *.sln
 *.sw?
+*.sublime-workspace
+*.sublime-project
 
+# ========================
 # OS / System
+# ========================
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
+# ========================
+# Temp & Debug
+# ========================
+*.tmp
+*.temp
+*.bak
+tmp/
+temp/
+
+# ========================
 # Emergent / Visual Edits
+# ========================
 .emergent/
 .emergentBase/
 emergent.json
+
+# ========================
+# Gemini / Antigravity
+# ========================
+.gemini/
+.antigravityignore
