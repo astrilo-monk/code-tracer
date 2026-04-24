@@ -1,7 +1,8 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import useTraceStore from '@/store/traceStore';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CaretRight } from '@phosphor-icons/react';
+import { getStepTransitionType } from '@/lib/frameDiff';
 
 const StepTimeline = () => {
   const steps = useTraceStore((s) => s.steps);
@@ -13,6 +14,14 @@ const StepTimeline = () => {
   const activeRef = useRef(null);
 
   const lines = code.split('\n');
+
+  // Pre-compute transition types for all steps
+  const transitionTypes = useMemo(() => {
+    return steps.map((step, i) => {
+      const prev = i > 0 ? steps[i - 1] : null;
+      return getStepTransitionType(step, prev);
+    });
+  }, [steps]);
 
   // Auto-scroll to active step
   useEffect(() => {
@@ -50,6 +59,7 @@ const StepTimeline = () => {
               const isPast = i < currentStep;
               const lineText = (lines[step.line - 1] || '').trim();
               const truncated = lineText.length > 40 ? lineText.slice(0, 40) + '...' : lineText;
+              const tt = transitionTypes[i];
 
               return (
                 <button
@@ -92,6 +102,17 @@ const StepTimeline = () => {
                       <span className={`text-[10px] font-mono ${isActive ? 'text-zinc-400' : 'text-zinc-600'}`}>
                         L{step.line}
                       </span>
+                      {/* Call/return badge */}
+                      {tt === 'call' && (
+                        <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400/80">
+                          → call
+                        </span>
+                      )}
+                      {tt === 'return' && (
+                        <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-violet-500/10 text-violet-400/80">
+                          ← return
+                        </span>
+                      )}
                     </div>
                     <p className={`text-xs font-mono truncate mt-0.5 ${
                       isActive ? 'text-zinc-200' : 'text-zinc-500'

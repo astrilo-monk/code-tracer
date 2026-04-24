@@ -1,26 +1,22 @@
 import React, { useMemo } from 'react';
 import useTraceStore from '@/store/traceStore';
-
-function getChangedVarNames(steps, currentStep) {
-  if (steps.length === 0 || currentStep === 0) return new Set();
-  const curr = steps[currentStep];
-  const prev = steps[currentStep - 1];
-  if (!curr || !prev) return new Set();
-  const prevMap = {};
-  for (const v of prev.variables) prevMap[v.name] = v.value;
-  const changed = new Set();
-  for (const v of curr.variables) {
-    if (prevMap[v.name] === undefined || prevMap[v.name] !== v.value) changed.add(v.name);
-  }
-  return changed;
-}
+import { getFrameScopedChanges, getTransitionMeta } from '@/lib/frameDiff';
 
 const MemoryVisualization = () => {
   const steps = useTraceStore((s) => s.steps);
   const currentStep = useTraceStore((s) => s.currentStep);
   const currentState = steps[currentStep] || null;
 
-  const changedVars = useMemo(() => getChangedVarNames(steps, currentStep), [steps, currentStep]);
+  const changedVars = useMemo(
+    () => getFrameScopedChanges(steps, currentStep),
+    [steps, currentStep],
+  );
+
+  const transition = useMemo(() => {
+    if (!currentState) return null;
+    const prev = currentStep > 0 ? steps[currentStep - 1] : null;
+    return getTransitionMeta(currentState, prev);
+  }, [currentState, currentStep, steps]);
 
   const variables = currentState?.variables || [];
   const heap = currentState?.heap || [];
@@ -67,6 +63,21 @@ const MemoryVisualization = () => {
           {/* Stack column */}
           <div className="flex-1">
             <div className="text-[10px] font-plex tracking-[0.2em] uppercase text-zinc-600 mb-3">Stack</div>
+
+            {/* Frame transition indicator */}
+            {transition?.isCall && (
+              <div className="mb-2 px-2 py-1.5 rounded bg-emerald-500/5 border border-emerald-500/15 text-[10px] font-plex text-emerald-400/80 flex items-center gap-1.5">
+                <span>↳</span>
+                <span>Entered <span className="font-mono font-medium">{currentState.func}()</span> scope</span>
+              </div>
+            )}
+            {transition?.isReturn && (
+              <div className="mb-2 px-2 py-1.5 rounded bg-violet-500/5 border border-violet-500/15 text-[10px] font-plex text-violet-400/80 flex items-center gap-1.5">
+                <span>↲</span>
+                <span>Returned to <span className="font-mono font-medium">{currentState.func}()</span> scope</span>
+              </div>
+            )}
+
             <div className="space-y-2">
               {variables.map((v, i) => {
                 const isChanged = changedVars.has(v.name);

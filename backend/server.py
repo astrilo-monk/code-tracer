@@ -60,13 +60,46 @@ def compile_c_code(code: str, tmpdir: str):
 
 
 def detect_java_main_class(code: str) -> Optional[str]:
-    public_match = re.search(r"public\s+class\s+([A-Za-z_][A-Za-z0-9_]*)", code)
-    if public_match:
-        return public_match.group(1)
+    """Best-effort detection of the class that defines main()."""
+    class_pattern = re.compile(r"(?:public\s+)?class\s+([A-Za-z_][A-Za-z0-9_]*)\b")
+    main_pattern = re.compile(r"public\s+static\s+void\s+main\s*\(")
 
-    class_match = re.search(r"class\s+([A-Za-z_][A-Za-z0-9_]*)", code)
-    if class_match:
-        return class_match.group(1)
+    classes = []
+    for match in class_pattern.finditer(code):
+        class_name = match.group(1)
+        open_brace = code.find("{", match.end())
+        if open_brace == -1:
+            continue
+
+        # Match braces to keep the search inside this class body.
+        depth = 0
+        close_brace = None
+        for idx in range(open_brace, len(code)):
+            ch = code[idx]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    close_brace = idx
+                    break
+
+        if close_brace is None:
+            continue
+
+        body = code[open_brace + 1:close_brace]
+        classes.append((class_name, body, match.group(0)))
+
+    for class_name, body, _decl in classes:
+        if main_pattern.search(body):
+            return class_name
+
+    for class_name, _body, decl in classes:
+        if decl.strip().startswith("public class"):
+            return class_name
+
+    if classes:
+        return classes[0][0]
 
     return None
 
@@ -578,10 +611,19 @@ async def run_code(request: RunCodeRequest):
 # Include router
 app.include_router(api_router)
 
+# CORS — allow Vercel frontend + localhost for dev
+_cors_env = os.environ.get('CORS_ORIGINS', '').strip()
+_cors_origins = [o.strip() for o in _cors_env.split(',') if o.strip()] if _cors_env else []
+_cors_origins += [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )

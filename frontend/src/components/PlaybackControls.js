@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import axios from 'axios';
 
-const API = "http://127.0.0.1:8000/api";
+const API = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
 
 const PlaybackControls = () => {
   const code = useTraceStore((s) => s.code);
