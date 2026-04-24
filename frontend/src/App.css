@@ -1,6 +1,6 @@
 /* ============================================
-  Code Tracer — App Layout & Custom Styles
-  ============================================ */
+   Code Tracer — App Layout & Custom Styles
+   ============================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -19,7 +19,6 @@
 }
 
 .app-header {
-  height: 40px;
   min-height: 40px;
   display: flex;
   align-items: center;
@@ -174,3 +173,91 @@ button, a, input {
   margin-left: 3px;
   border-radius: 1px;
 }
+
+/* ============================================
+   MOBILE RESPONSIVE — phones & small tablets
+   ============================================ */
+
+/* ---- Tablets and below (< 768px) ---- */
+@media (max-width: 767px) {
+  /* Header: wrap into two rows */
+  .app-header {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 12px;
+    height: auto;
+    min-height: auto;
+  }
+
+  /* Grid: single column, scrollable */
+  .app-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* Each panel gets a minimum height + allow growing */
+  .quadrant {
+    min-height: 280px;
+    overflow: visible;
+    border-right: none !important;
+  }
+
+  /* Give the code editor enough room */
+  .quadrant:first-child {
+    min-height: 320px;
+    height: 45vh;
+  }
+
+  /* Memory panel */
+  .quadrant:nth-child(2) {
+    min-height: 250px;
+  }
+
+  /* Explanation + Timeline */
+  .quadrant:nth-child(3),
+  .quadrant:nth-child(4) {
+    min-height: 220px;
+  }
+
+  /* Memory blocks: smaller padding */
+  .mem-block {
+    padding: 6px 10px;
+  }
+
+  .mem-block-name {
+    font-size: 12px;
+  }
+
+  .mem-block-value {
+    font-size: 12px;
+  }
+}
+
+/* ---- Small phones (< 480px) ---- */
+@media (max-width: 479px) {
+  .app-header {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  /* Code editor: still needs decent height */
+  .quadrant:first-child {
+    min-height: 280px;
+    height: 50vh;
+  }
+
+  .mem-block {
+    padding: 5px 8px;
+  }
+
+  .mem-block-name {
+    font-size: 11px;
+  }
+
+  .mem-block-value {
+    font-size: 11px;
+  }
+}
+

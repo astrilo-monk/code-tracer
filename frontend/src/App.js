@@ -65,7 +65,7 @@ const ErrorBanner = () => {
 };
 
 const SupportedFeatures = () => (
-  <div data-testid="supported-features" className="flex items-center gap-3 text-[10px] font-plex text-zinc-600">
+  <div data-testid="supported-features" className="hidden sm:flex items-center gap-3 text-[10px] font-plex text-zinc-600">
     <Info size={12} className="text-zinc-600 shrink-0" />
     <span>Supports C + Java tracing (core control flow, stack, locals)</span>
   </div>

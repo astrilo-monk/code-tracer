@@ -114,7 +114,7 @@ const CodeEditor = () => {
           onChange={(val) => setCode(val || '')}
           onMount={handleEditorDidMount}
           options={{
-            fontSize: 13,
+            fontSize: window.innerWidth < 768 ? 11 : 13,
             fontFamily: "'JetBrains Mono', monospace",
             minimap: { enabled: false },
             lineNumbers: 'on',
@@ -124,7 +124,7 @@ const CodeEditor = () => {
             overviewRulerBorder: false,
             hideCursorInOverviewRuler: true,
             scrollbar: {
-              vertical: 'hidden',
+              vertical: 'auto',
               horizontal: 'hidden',
             },
             readOnly: isTracing,
