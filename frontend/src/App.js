@@ -6,13 +6,20 @@ import MemoryVisualization from '@/components/MemoryVisualization';
 import StepTimeline from '@/components/StepTimeline';
 import PlaybackControls from '@/components/PlaybackControls';
 import useTraceStore from '@/store/traceStore';
-import { Terminal, Warning, GraduationCap, Info } from '@phosphor-icons/react';
+import { Terminal, Warning, GraduationCap, Info, X } from '@phosphor-icons/react';
 
 const ErrorBanner = () => {
   const compilationError = useTraceStore((s) => s.compilationError);
   const traceError = useTraceStore((s) => s.traceError);
+  const setTraceError = useTraceStore((s) => s.setTraceError);
+  const setCompilationError = useTraceStore((s) => s.setCompilationError);
   const error = compilationError || traceError;
   if (!error) return null;
+
+  const dismiss = () => {
+    setTraceError(null);
+    setCompilationError(null);
+  };
 
   // Parse line numbers from GCC/Javac errors
   const lines = error.split('\n').filter(Boolean);
@@ -20,11 +27,21 @@ const ErrorBanner = () => {
   return (
     <div data-testid="error-banner" className="fixed top-0 left-0 right-0 z-50 bg-red-950/95 border-b border-red-500/30 backdrop-blur-sm">
       <div className="px-4 py-2 max-h-40 overflow-y-auto">
-        <div className="flex items-center gap-2 mb-1">
-          <Warning size={14} className="text-red-400 shrink-0" weight="fill" />
-          <span className="text-[10px] font-plex tracking-[0.15em] uppercase text-red-400">
-            {compilationError ? 'Compilation Error' : 'Trace Error'}
-          </span>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <Warning size={14} className="text-red-400 shrink-0" weight="fill" />
+            <span className="text-[10px] font-plex tracking-[0.15em] uppercase text-red-400">
+              {compilationError ? 'Compilation Error' : 'Trace Error'}
+            </span>
+          </div>
+          <button
+            data-testid="error-dismiss"
+            onClick={dismiss}
+            className="p-0.5 rounded hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors"
+            aria-label="Dismiss error"
+          >
+            <X size={14} weight="bold" />
+          </button>
         </div>
         {lines.map((line, i) => {
           const match = line.match(/(?:program\.c|[A-Za-z_][A-Za-z0-9_]*\.java):(\d+)(?::\d+)?:\s*(error|warning):\s*(.*)/);
